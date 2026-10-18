@@ -18,6 +18,7 @@
  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  THE SOFTWARE. */
 
+#include "os/lithe_coop.hpp"
 #include "platform/program.hpp"
 #include "platform/kernel.hpp"
 #include "os/os.hpp"
@@ -2606,7 +2607,7 @@ void Device::HiddenHeapAlloc(const VirtualGPU& gpu) {
 
     return result;
   };
-  std::call_once(heap_initialized_, HeapAlloc);
+  amd::LitheCallOnce(heap_initialized_, HeapAlloc);
 }
 
 // ================================================================================================

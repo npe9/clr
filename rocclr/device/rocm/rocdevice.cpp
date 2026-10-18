@@ -20,6 +20,7 @@
 
 #ifndef WITHOUT_HSA_BACKEND
 
+#include "os/lithe_coop.hpp"
 #include "platform/program.hpp"
 #include "platform/kernel.hpp"
 #include "os/os.hpp"
@@ -2311,7 +2312,7 @@ void* Device::hostNumaAlloc(size_t size, size_t alignment, bool atomics) const {
 void Device::hostFree(void* ptr, size_t size) const { memFree(ptr, size); }
 
 bool Device::deviceAllowAccess(void* ptr) const {
-  std::lock_guard<std::mutex> lock(lock_allow_access_);
+  std::lock_guard<amd::LitheMutex> lock(lock_allow_access_);
   if (!p2pAgents().empty()) {
     hsa_status_t stat = hsa_amd_agents_allow_access(p2pAgents().size(),
                                                     p2pAgents().data(), nullptr, ptr);
@@ -3571,7 +3572,7 @@ void Device::HiddenHeapAlloc(const VirtualGPU& gpu) {
     }
     return true;
   };
-  std::call_once(heap_allocated_, HeapAllocOnly);
+  amd::LitheCallOnce(heap_allocated_, HeapAllocOnly);
 }
 
 // ================================================================================================
@@ -3584,7 +3585,7 @@ void Device::HiddenHeapInit(const VirtualGPU& gpu) {
 
     return result;
   };
-  std::call_once(heap_initialized_, HeapZeroOut);
+  amd::LitheCallOnce(heap_initialized_, HeapZeroOut);
 }
 
 // ================================================================================================

@@ -21,6 +21,7 @@
 #ifndef HIP_SRC_HIP_INTERNAL_H
 #define HIP_SRC_HIP_INTERNAL_H
 
+#include "os/lithe_coop.hpp"
 #include "vdi_common.hpp"
 #include "hip_prof_api.h"
 #include "trace_helper.h"
@@ -52,7 +53,7 @@
 #define IHIP_IPC_MEM_HANDLE_SIZE   32
 #define IHIP_IPC_MEM_RESERVED_SIZE LP64_SWITCH(20,12)
 namespace hip{
-  extern std::once_flag g_ihipInitialized;
+  extern amd::LitheOnceFlag g_ihipInitialized;
 }
 typedef struct hipArray {
     void* data;  // FIXME: generalize this
@@ -99,7 +100,7 @@ const char* ihipGetErrorName(hipError_t hip_error);
 #define HIP_INIT(noReturn)                                                                         \
   {                                                                                                \
     bool status = true;                                                                            \
-    std::call_once(hip::g_ihipInitialized, hip::init, &status);                                         \
+    amd::LitheCallOnce(hip::g_ihipInitialized, [&]() { hip::init(&status); });                                    \
     if (!status && !noReturn) {                                                                    \
       HIP_RETURN(hipErrorInvalidDevice);                                                           \
     }                                                                                              \
@@ -112,10 +113,10 @@ const char* ihipGetErrorName(hipError_t hip_error);
 #define HIP_INIT_VOID()                                                                            \
   {                                                                                                \
     bool status = true;                                                                            \
-    std::call_once(hip::g_ihipInitialized, hip::init, &status);                                         \
-    if (hip::tls.device_ == nullptr && hip::g_devices.size() > 0) {                           \
-      hip::tls.device_ = hip::g_devices[0];                                                   \
-      amd::Os::setPreferredNumaNode(hip::g_devices[0]->devices()[0]->getPreferredNumaNode()); \
+    amd::LitheCallOnce(hip::g_ihipInitialized, [&]() { hip::init(&status); });                                    \
+    if (hip::tls.device_ == nullptr && hip::g_devices.size() > 0) {                                \
+      hip::tls.device_ = hip::g_devices[0];                                                        \
+      amd::Os::setPreferredNumaNode(hip::g_devices[0]->devices()[0]->getPreferredNumaNode());      \
     }                                                                                              \
   }
 

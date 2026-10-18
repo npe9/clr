@@ -94,7 +94,7 @@ void Semaphore::wait() {
     fatal("WaitForSingleObject failed");
   }
 #else   // !_WIN32
-  if (LitheCoop()) {
+  if (LitheLockCoop()) {
     // Lithe: a context must not block its hart in sem_wait; poll and yield between turns.
     while (0 != sem_trywait(&sem_)) {
       if (EAGAIN == errno) LitheYield();
@@ -136,7 +136,7 @@ void Semaphore::timedWait(int millis) {
   }
 
   int status;
-  if (LitheCoop()) {
+  if (LitheLockCoop()) {
     // Lithe: poll until the deadline, yielding the hart between polls (same exit as ETIMEDOUT).
     while (0 != sem_trywait(&sem_)) {
       if (EAGAIN != errno && EINTR != errno) fatal("sem_trywait() failed");

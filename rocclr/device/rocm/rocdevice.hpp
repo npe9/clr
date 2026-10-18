@@ -22,6 +22,7 @@
 
 #ifndef WITHOUT_HSA_BACKEND
 
+#include "os/lithe_coop.hpp"
 #include "top.hpp"
 #include "CL/cl.h"
 #include "device/device.hpp"
@@ -626,7 +627,7 @@ class Device : public NullDevice {
   hsa_agent_t cpu_agent_;
   uint32_t preferred_numa_node_;
   std::vector<hsa_agent_t> p2p_agents_;  //!< List of P2P agents available for this device
-  mutable std::mutex lock_allow_access_; //!< To serialize allow_access calls
+  mutable amd::LitheMutex lock_allow_access_; //!< To serialize allow_access calls
   hsa_agent_t bkendDevice_;
   uint32_t pciDeviceId_;
   hsa_agent_t* p2p_agents_list_ = nullptr;
