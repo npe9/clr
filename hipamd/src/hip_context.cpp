@@ -18,6 +18,7 @@
  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  THE SOFTWARE. */
 
+#include "os/lithe_coop.hpp"
 #include <hip/hip_runtime.h>
 #include "hip_internal.hpp"
 #include "hip_platform.hpp"
@@ -31,7 +32,7 @@ const HipToolsDispatchTable* GetHipToolsDispatchTable();
 }  // namespace hip
 
 namespace hip {
-std::once_flag g_ihipInitialized;
+amd::LitheOnceFlag g_ihipInitialized;
 
 std::vector<hip::Device*> g_devices ROCCLR_INIT_PRIORITY(101);
 thread_local TlsAggregator tls;

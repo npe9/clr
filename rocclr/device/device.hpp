@@ -21,6 +21,7 @@
 #ifndef DEVICE_HPP_
 #define DEVICE_HPP_
 
+#include "os/lithe_coop.hpp"
 #include "top.hpp"
 #include "thread/thread.hpp"
 #include "thread/monitor.hpp"
@@ -1401,7 +1402,7 @@ class MemObjMap : public AllStatic {
   //!< the virtual mem object<->hostptr information container
   static std::map<uintptr_t, amd::Memory*> VirtualMemObjMap_;
   //!< Shared read/write lock
-  static std::shared_mutex AllocatedLock_;
+  static amd::LitheSharedMutex AllocatedLock_;
 };
 
 /// @brief Instruction Set Architecture properties.
@@ -2169,8 +2170,8 @@ class Device : public RuntimeObject {
   static Memory* p2p_stage_;          //!< Staging resources
   std::vector<Device*> enabled_p2p_devices_;  //!< List of user enabled P2P devices for this device
 
-  std::once_flag heap_initialized_;  //!< Heap buffer initialization flag
-  std::once_flag heap_allocated_;    //!< Heap buffer allocation flag
+  amd::LitheOnceFlag heap_initialized_;  //!< Heap buffer initialization flag
+  amd::LitheOnceFlag heap_allocated_;    //!< Heap buffer allocation flag
 
   device::Memory* heap_buffer_;     //!< Preallocated heap buffer for memory allocations on device
 

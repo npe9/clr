@@ -18,6 +18,7 @@
  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  THE SOFTWARE. */
 
+#include "os/lithe_coop.hpp"
 #include "device/device.hpp"
 #include "thread/monitor.hpp"
 #include "utils/options.hpp"
@@ -345,7 +346,7 @@ Context* Device::glb_ctx_ = nullptr;
 Monitor Device::p2p_stage_ops_(true);
 Memory* Device::p2p_stage_ = nullptr;
 
-std::shared_mutex MemObjMap::AllocatedLock_ ROCCLR_INIT_PRIORITY(101);
+amd::LitheSharedMutex MemObjMap::AllocatedLock_ ROCCLR_INIT_PRIORITY(101);
 std::map<uintptr_t, amd::Memory*> MemObjMap::MemObjMap_ ROCCLR_INIT_PRIORITY(101);
 std::map<uintptr_t, amd::Memory*> MemObjMap::VirtualMemObjMap_ ROCCLR_INIT_PRIORITY(101);
 
