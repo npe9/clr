@@ -20,6 +20,7 @@
 
 #if !defined(_WIN32) && !defined(__CYGWIN__)
 
+#include "os/lithe_coop.hpp"
 #include "os/os.hpp"
 #include "thread/thread.hpp"
 #include "utils/util.hpp"
@@ -400,6 +401,19 @@ const void* Os::createOsThread(amd::Thread* thread) {
     ::pthread_attr_setstacksize(&threadAttr, thread->stackSize_ + guardsize + tlsSize);
   }
 
+  // Lithe: created from a Lithe context, an amd::Thread becomes a Lithe progress context (never
+  // joined, like the detached pthread below). The thread's stack info then describes the vcore.
+  if (LitheCoop() && LitheThreads()) {
+    size_t ss = thread->stackSize_ ? thread->stackSize_ + (size_t(1) << 16) : (size_t(1) << 20);
+    if (ss < (size_t(1) << 20)) ss = size_t(1) << 20;
+    void* ctx = lithe_fork_join_context_create_progress(
+        ss, [](void* t) { Thread::entry(static_cast<Thread*>(t)); }, thread);
+    if (ctx != nullptr) {
+      ::pthread_attr_destroy(&threadAttr);
+      return ctx;
+    }
+  }
+
   // We never plan the use join, so free the resources now.
   ::pthread_attr_setdetachstate(&threadAttr, PTHREAD_CREATE_DETACHED);
 
@@ -426,7 +440,10 @@ bool Os::setThreadAffinityToMainThread() {
   return true;
 }
 
-void Os::yield() { ::sched_yield(); }
+void Os::yield() {
+  if (LitheCoop()) LitheYield();  // a Lithe context yields its hart, not the kernel thread
+  else ::sched_yield();
+}
 
 uint64_t Os::timeNanos() {
   struct timespec tp;

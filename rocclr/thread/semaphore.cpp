@@ -20,6 +20,7 @@
 
 #include "thread/semaphore.hpp"
 #include "thread/thread.hpp"
+#include "os/lithe_coop.hpp"
 
 #if defined(_WIN32) || defined(__CYGWIN__)
 #include <windows.h>
@@ -93,6 +94,14 @@ void Semaphore::wait() {
     fatal("WaitForSingleObject failed");
   }
 #else   // !_WIN32
+  if (LitheCoop()) {
+    // Lithe: a context must not block its hart in sem_wait; poll and yield between turns.
+    while (0 != sem_trywait(&sem_)) {
+      if (EAGAIN == errno) LitheYield();
+      else if (EINTR != errno) fatal("sem_trywait() failed");
+    }
+    return;
+  }
   while (0 != sem_wait(&sem_)) {
     if (EINTR != errno) {
       fatal("sem_wait() failed");
@@ -127,6 +136,17 @@ void Semaphore::timedWait(int millis) {
   }
 
   int status;
+  if (LitheCoop()) {
+    // Lithe: poll until the deadline, yielding the hart between polls (same exit as ETIMEDOUT).
+    while (0 != sem_trywait(&sem_)) {
+      if (EAGAIN != errno && EINTR != errno) fatal("sem_trywait() failed");
+      struct timespec now;
+      clock_gettime(CLOCK_REALTIME, &now);
+      if (now.tv_sec > ts.tv_sec || (now.tv_sec == ts.tv_sec && now.tv_nsec >= ts.tv_nsec)) break;
+      LitheYield();
+    }
+    return;
+  }
   while ((status = sem_timedwait(&sem_, &ts)) != 0) {
     if (ETIMEDOUT == errno) {
       break;
