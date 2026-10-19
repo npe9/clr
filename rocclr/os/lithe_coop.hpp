@@ -17,7 +17,8 @@ int parlib_can_cooperatively_yield(void) __attribute__((weak));
 void lithe_context_yield(void) __attribute__((weak));
 void* lithe_sched_current(void) __attribute__((weak));
 void* lithe_fork_join_context_create_progress(size_t stack_size, void (*start)(void*), void* arg)
-    __attribute__((weak));
+    __attribute__((weak));// Progress contexts live as long as the runtime: keep them out of join_all (GAPS B26).
+void lithe_fork_join_context_set_daemon(void* ctx) __attribute__((weak));
 }
 
 namespace amd {
