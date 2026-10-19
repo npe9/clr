@@ -409,6 +409,7 @@ const void* Os::createOsThread(amd::Thread* thread) {
     void* ctx = lithe_fork_join_context_create_progress(
         ss, [](void* t) { Thread::entry(static_cast<Thread*>(t)); }, thread);
     if (ctx != nullptr) {
+      if (lithe_fork_join_context_set_daemon) lithe_fork_join_context_set_daemon(ctx);  // B26
       ::pthread_attr_destroy(&threadAttr);
       return ctx;
     }
