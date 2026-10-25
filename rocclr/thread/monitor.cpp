@@ -19,6 +19,7 @@
  THE SOFTWARE. */
 
 #include "thread/monitor.hpp"
+#include "os/lithe_coop.hpp"
 #include "thread/semaphore.hpp"
 #include "thread/thread.hpp"
 #include "utils/util.hpp"
@@ -107,7 +108,7 @@ void Monitor::finishLock() {
       Os::spinPause();
     }
     // and then SMP friendly
-    else if (spinCount < kMaxSpinIter) {
+    else if (spinCount < kMaxSpinIter && !(LitheNoSpin() && LitheLockCoop())) {  // ROCCLR_LITHE_NOSPIN: no yield phase
       Thread::yield();
     }
     // now go to sleep
@@ -135,7 +136,7 @@ void Monitor::finishLock() {
       Os::spinPause();
     }
     // and then SMP friendly
-    else if (spinCount < kMaxSpinIter) {
+    else if (spinCount < kMaxSpinIter && !(LitheNoSpin() && LitheLockCoop())) {  // ROCCLR_LITHE_NOSPIN: no yield phase
       Thread::yield();
     }
     // now go to sleep
@@ -239,7 +240,7 @@ void Monitor::wait() {
       Os::spinPause();
     }
     // and then SMP friendly
-    else if (spinCount < kMaxSpinIter) {
+    else if (spinCount < kMaxSpinIter && !(LitheNoSpin() && LitheLockCoop())) {  // ROCCLR_LITHE_NOSPIN: no yield phase
       Thread::yield();
     }
     // now go to sleep
@@ -264,7 +265,7 @@ void Monitor::wait() {
       Os::spinPause();
     }
     // and then SMP friendly
-    else if (spinCount < kMaxSpinIter) {
+    else if (spinCount < kMaxSpinIter && !(LitheNoSpin() && LitheLockCoop())) {  // ROCCLR_LITHE_NOSPIN: no yield phase
       Thread::yield();
     }
     // now go to sleep

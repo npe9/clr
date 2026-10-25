@@ -21,6 +21,17 @@
 #if !defined(_WIN32) && !defined(__CYGWIN__)
 
 #include "os/lithe_coop.hpp"
+namespace amd {
+LitheParkBucket g_lithe_park[64];
+bool LitheNoSpin() {
+  static int on = -1;
+  if (on < 0) {
+    const char* e = getenv("ROCCLR_LITHE_NOSPIN");
+    on = (e && *e && atoi(e) != 0 && futex_wait && futex_wait_timeout && futex_wake_all) ? 1 : 0;
+  }
+  return on;
+}
+}  // namespace amd
 #include "os/os.hpp"
 #include "thread/thread.hpp"
 #include "utils/util.hpp"

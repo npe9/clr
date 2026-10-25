@@ -80,6 +80,7 @@ void Semaphore::post() {
     if (0 != sem_post(&sem_)) {
       fatal("sem_post() failed");
     }
+    if (LitheNoSpin()) LitheParkWake(&sem_);
 #endif  // !_WIN32
   }
 }
@@ -95,11 +96,13 @@ void Semaphore::wait() {
   }
 #else   // !_WIN32
   if (LitheLockCoop()) {
-    // Lithe: a context must not block its hart in sem_wait; poll and yield between turns.
-    while (0 != sem_trywait(&sem_)) {
-      if (EAGAIN == errno) LitheYield();
-      else if (EINTR != errno) fatal("sem_trywait() failed");
-    }
+    // Lithe: a context must not block its hart in sem_wait; poll and yield between turns
+    // (ROCCLR_LITHE_NOSPIN: park on a Lithe futex word, post() wakes).
+    LitheWaitUntil(&sem_, [this] {
+      if (0 == sem_trywait(&sem_)) return true;
+      if (EAGAIN != errno && EINTR != errno) fatal("sem_trywait() failed");
+      return false;
+    });
     return;
   }
   while (0 != sem_wait(&sem_)) {
@@ -143,6 +146,13 @@ void Semaphore::timedWait(int millis) {
       struct timespec now;
       clock_gettime(CLOCK_REALTIME, &now);
       if (now.tv_sec > ts.tv_sec || (now.tv_sec == ts.tv_sec && now.tv_nsec >= ts.tv_nsec)) break;
+      if (LitheNoSpin()) {
+        int s = LitheParkPrep(&sem_);
+        if (0 == sem_trywait(&sem_)) { LitheParkCancel(&sem_); break; }
+        long long left = (long long)(ts.tv_sec - now.tv_sec) * 1000000000ll + (ts.tv_nsec - now.tv_nsec);
+        LitheParkWait(&sem_, s, left > 0 ? left : 0);
+        continue;
+      }
       LitheYield();
     }
     return;

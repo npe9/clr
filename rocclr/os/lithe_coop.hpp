@@ -11,6 +11,8 @@
 #include <mutex>
 #include <shared_mutex>
 #include <sched.h>
+#include <stdint.h>
+#include <time.h>
 
 extern "C" {
 int parlib_can_cooperatively_yield(void) __attribute__((weak));
@@ -19,6 +21,9 @@ void* lithe_sched_current(void) __attribute__((weak));
 void* lithe_fork_join_context_create_progress(size_t stack_size, void (*start)(void*), void* arg)
     __attribute__((weak));// Progress contexts live as long as the runtime: keep them out of join_all (GAPS B26).
 void lithe_fork_join_context_set_daemon(void* ctx) __attribute__((weak));
+int futex_wait(int* uaddr, int val) __attribute__((weak));
+int futex_wait_timeout(int* uaddr, int val, const struct timespec* rel) __attribute__((weak));
+int futex_wake_all(int* uaddr) __attribute__((weak));
 }
 
 namespace amd {
@@ -34,6 +39,55 @@ inline bool LitheCoop() {
   return LitheEnabled() && lithe_sched_current() != nullptr && parlib_can_cooperatively_yield();
 }
 inline void LitheYield() { lithe_context_yield(); }
+// De-spin (2026-10-24, lithe-docker .build_logs/spin_census/DESPIN_RULES.md). ROCCLR_LITHE_NOSPIN=1
+// (default 0): the Lithe "try, yield, retry" waits (LitheMutex, LitheSharedMutex, LitheCallOnce,
+// Semaphore::wait/timedWait, Monitor's yield phase) park on a Lithe futex word instead; the release
+// side wakes. A yield-waiter stays runnable and round-robins for harts against real work, and a yield
+// never requests a hart (GAPS B56). 64 hashed buckets {waiters, seq}: the waiter counts in, samples
+// seq, retries, parks; the releaser bumps seq and wakes only if someone counts (one load otherwise).
+bool LitheNoSpin();
+struct LitheParkBucket {
+  std::atomic<int> waiters;
+  int seq;
+  char pad[56];
+};
+extern LitheParkBucket g_lithe_park[64];
+inline LitheParkBucket& LitheParkOf(const void* a) {
+  return g_lithe_park[((reinterpret_cast<uintptr_t>(a) >> 4) * 0x9E3779B97F4A7C15ull) >> 58];
+}
+inline int LitheParkPrep(const void* a) {
+  LitheParkBucket& b = LitheParkOf(a);
+  b.waiters.fetch_add(1, std::memory_order_seq_cst);
+  return __atomic_load_n(&b.seq, __ATOMIC_SEQ_CST);
+}
+inline void LitheParkCancel(const void* a) {
+  LitheParkOf(a).waiters.fetch_sub(1, std::memory_order_seq_cst);
+}
+inline void LitheParkWait(const void* a, int seq, long long rel_ns = -1) {
+  LitheParkBucket& b = LitheParkOf(a);
+  if (rel_ns < 0) {
+    futex_wait(&b.seq, seq);
+  } else {
+    struct timespec ts = {time_t(rel_ns / 1000000000ll), long(rel_ns % 1000000000ll)};
+    futex_wait_timeout(&b.seq, seq, &ts);
+  }
+  b.waiters.fetch_sub(1, std::memory_order_seq_cst);
+}
+inline void LitheParkWake(const void* a) {
+  LitheParkBucket& b = LitheParkOf(a);
+  std::atomic_thread_fence(std::memory_order_seq_cst);
+  if (b.waiters.load(std::memory_order_seq_cst) == 0) return;
+  __atomic_fetch_add(&b.seq, 1, __ATOMIC_SEQ_CST);
+  futex_wake_all(&b.seq);
+}
+template <class F> inline void LitheWaitUntil(const void* addr, F&& done) {
+  while (!done()) {
+    if (!LitheNoSpin()) { LitheYield(); continue; }
+    int s = LitheParkPrep(addr);
+    if (done()) { LitheParkCancel(addr); return; }
+    LitheParkWait(addr, s);
+  }
+}
 // Lithe locks only (ROCCLR_LITHE_LOCKS=0 keeps blocking locks while waits stay cooperative; ablation).
 inline bool LitheLockCoop() {
   static int on = -1;
@@ -53,28 +107,28 @@ inline bool LitheThreads() {
 class LitheMutex {
  public:
   void lock() {
-    if (LitheLockCoop()) { while (!m_.try_lock()) LitheYield(); return; }
+    if (LitheLockCoop()) { LitheWaitUntil(this, [this] { return m_.try_lock(); }); return; }
     m_.lock();
   }
   bool try_lock() { return m_.try_lock(); }
-  void unlock() { m_.unlock(); }
+  void unlock() { m_.unlock(); if (LitheNoSpin()) LitheParkWake(this); }
  private:
   std::mutex m_;
 };
 class LitheSharedMutex {
  public:
   void lock() {
-    if (LitheLockCoop()) { while (!m_.try_lock()) LitheYield(); return; }
+    if (LitheLockCoop()) { LitheWaitUntil(this, [this] { return m_.try_lock(); }); return; }
     m_.lock();
   }
   bool try_lock() { return m_.try_lock(); }
-  void unlock() { m_.unlock(); }
+  void unlock() { m_.unlock(); if (LitheNoSpin()) LitheParkWake(this); }
   void lock_shared() {
-    if (LitheLockCoop()) { while (!m_.try_lock_shared()) LitheYield(); return; }
+    if (LitheLockCoop()) { LitheWaitUntil(this, [this] { return m_.try_lock_shared(); }); return; }
     m_.lock_shared();
   }
   bool try_lock_shared() { return m_.try_lock_shared(); }
-  void unlock_shared() { m_.unlock_shared(); }
+  void unlock_shared() { m_.unlock_shared(); if (LitheNoSpin()) LitheParkWake(this); }
  private:
   std::shared_mutex m_;
 };
@@ -90,11 +144,15 @@ template <class F> inline void LitheCallOnce(LitheOnceFlag& flag, F&& f) {
   if (flag.state.compare_exchange_strong(expect, 1, std::memory_order_acq_rel)) {
     f();
     flag.state.store(2, std::memory_order_release);
+    if (LitheNoSpin()) LitheParkWake(&flag);
     return;
   }
   while (flag.state.load(std::memory_order_acquire) != 2) {
-    if (LitheLockCoop()) LitheYield();
-    else sched_yield();
+    if (LitheLockCoop()) {
+      LitheWaitUntil(&flag, [&flag] { return flag.state.load(std::memory_order_acquire) == 2; });
+      return;
+    }
+    sched_yield();
   }
 }
 }  // namespace amd
